@@ -54,73 +54,46 @@ class NetworkLinks:
             fields = ["MUID", "SHAPE@", 'Length', fromnode_fieldname, tonode_fieldname] if fromnode_fieldname in [f.name for f in arcpy.ListFields(msm_Link)] else ["MUID", "SHAPE@", 'Length']
             with arcpy.da.SearchCursor(msm_Link, fields) as cursor:
                 for row in cursor:
-                    fromnode = None
-                    tonode = None
-
+                    self.links[row[0]] = self.Link(row[0])
                     if (fromnode_fieldname in fields and row[3] and row[4] and
                             row[3] in points_muid and row[4] in points_muid and
                             validateNode(row[1].firstPoint, points_xy[points_muid.index(row[3]),:]) and
                             validateNode(row[1].lastPoint, points_xy[points_muid.index(row[4]),:])):
-                        fromnode = row[3]
-                        tonode = row[4]
+                        self.links[row[0]].fromnode = row[3]
+                        self.links[row[0]].tonode = row[4]
+                        self.links[row[0]].node_field_correct = True
                     else:
-                        fromnode = findClosestNode(row[1].firstPoint)
-                        tonode = findClosestNode(row[1].lastPoint)
-#                        match = getFromNodeRe.findall(row[0])
-#                        if len(match) == 1 and match[0] in nodes and nodes[match[0]].shape.distanceTo(row[1].firstPoint) < 0.1:
-#                            fromnode = match[0]
-#                        for node in nodes:
-#                            if fromnode is None and nodes[node].shape.distanceTo(row[1].firstPoint) < 0.1:
-#                                fromnode = nodes[node].MUID
-#                            elif tonode is None and nodes[node].shape.distanceTo(row[1].lastPoint) < 0.1:
-#                                tonode = nodes[node].MUID
-                    self.links[row[0]] = self.Link(row[0], fromnode, tonode, row[2] if row[2] else row[1].length)
+                        self.links[row[0]].fromnode = findClosestNode(row[1].firstPoint)
+                        self.links[row[0]].tonode = findClosestNode(row[1].lastPoint)
+
+                    self.links[row[0]].length = row[2] if row[2] else row[1].length
 
         if map_only == "" or "weir" in map_only:
             self.weirs = {}
             with arcpy.da.SearchCursor(msm_Weir, ["MUID", "SHAPE@"]) as cursor:
                 for row in cursor:
-                    fromnode = findClosestNode(row[1].firstPoint)
-                    tonode = findClosestNode(row[1].lastPoint)
-#                    fromnode = None
-#                    tonode = None
-#
-#                    for node in nodes:
-#                        if fromnode is None and nodes[node].shape.distanceTo(row[1].firstPoint) < 0.1:
-#                            fromnode = nodes[node].MUID
-#                        elif tonode is None and nodes[node].shape.distanceTo(row[1].lastPoint) < 0.1:
-#                            tonode = nodes[node].MUID
-                    self.weirs[row[0]] = self.Link(row[0], fromnode, tonode, row[1].length)
+                    self.links[row[0]] = self.Link(row[0])
+                    self.links[row[0]].fromnode = findClosestNode(row[1].firstPoint)
+                    self.links[row[0]].tonode = findClosestNode(row[1].lastPoint)
+                    self.links[row[0]].length = row[1].length
 
         if map_only == "" or "pump" in map_only:
             self.pumps = {}
             with arcpy.da.SearchCursor(msm_Pump, ["MUID", "SHAPE@"]) as cursor:
                 for row in cursor:
-                    fromnode = findClosestNode(row[1].firstPoint)
-                    tonode = findClosestNode(row[1].lastPoint)
-#                    fromnode = None
-#                    tonode = None
-#                    for node in nodes:
-#                        if fromnode is None and nodes[node].shape.distanceTo(row[1].firstPoint) < 0.1:
-#                            fromnode = nodes[node].MUID
-#                        elif tonode is None and nodes[node].shape.distanceTo(row[1].lastPoint) < 0.1:
-#                            tonode = nodes[node].MUID
-                    self.pumps[row[0]] = self.Link(row[0], fromnode, tonode, row[1].length)
+                    self.links[row[0]] = self.Link(row[0])
+                    self.links[row[0]].fromnode = findClosestNode(row[1].firstPoint)
+                    self.links[row[0]].tonode = findClosestNode(row[1].lastPoint)
+                    self.links[row[0]].length = row[1].length
 
         if map_only == "" or "orifice" in map_only:
             self.orifices = {}
             with arcpy.da.SearchCursor(msm_Orifice, ["MUID", "SHAPE@"]) as cursor:
                 for row in cursor:
-                    fromnode = findClosestNode(row[1].firstPoint)
-                    tonode = findClosestNode(row[1].lastPoint)
-#                    fromnode = None
-#                    tonode = None
-#                    for node in nodes:
-#                        if fromnode is None and nodes[node].shape.distanceTo(row[1].firstPoint) < 0.1:
-#                            fromnode = nodes[node].MUID
-#                        elif tonode is None and nodes[node].shape.distanceTo(row[1].lastPoint) < 0.1:
-#                            tonode = nodes[node].MUID
-                    self.orifices[row[0]] = self.Link(row[0], fromnode, tonode, row[1].length)
+                    self.links[row[0]] = self.Link(row[0])
+                    self.links[row[0]].fromnode = findClosestNode(row[1].firstPoint)
+                    self.links[row[0]].tonode = findClosestNode(row[1].lastPoint)
+                    self.links[row[0]].length = row[1].length
 
     class Node:
         def __init__(self, MUID, shape):
@@ -128,8 +101,10 @@ class NetworkLinks:
             self.shape = shape
 
     class Link:
-        def __init__(self, MUID, fromnode, tonode, length):
+        def __init__(self, MUID):
             self.MUID = MUID
-            self.fromnode = fromnode
-            self.tonode = tonode
-            self.length = length
+
+        fromnode = None
+        tonode = None
+        length = None
+        node_field_correct = False

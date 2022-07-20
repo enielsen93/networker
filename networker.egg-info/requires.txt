@@ -1,4 +1,1 @@
-arcpy
 numpy
-os
-re
