@@ -1,5 +1,5 @@
 # networker
-Python Package for analyzing fromnode and tonode in a Mike Urban Database
+Python Package for getting fromnode and tonode in a MIKE URBAN Database by spatial analysis.
 
 <b>To install:</b>
 
