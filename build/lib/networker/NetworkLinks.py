@@ -23,13 +23,13 @@ class NetworkLinks:
         msm_Pump = os.path.join(mike_urban_database,"msm_Pump")
         map_only = map_only.lower()
 
-        nodes = {}
+        self.nodes = {}
 #        print(arcpy.management.GetCount(msm_Node))
         points_xy = np.zeros((int(arcpy.management.GetCount(msm_Node)[0]),2))
         points_muid = []
         with arcpy.da.SearchCursor(msm_Node, ["MUID", "SHAPE@"]) as cursor:
             for i,row in enumerate(cursor):
-                nodes[row[0]] = self.Node(row[0], row[1])
+                self.nodes[row[0]] = self.Node(row[0], row[1])
                 points_xy[i,:] = [row[1].firstPoint.X, row[1].firstPoint.Y]
                 points_muid.append(row[0])
 
