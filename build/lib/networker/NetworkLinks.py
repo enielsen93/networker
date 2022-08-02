@@ -14,6 +14,7 @@ import re
 class NetworkLinks:
     def __init__(self, mike_urban_database, map_only = ""):
         self.mike_urban_database = mike_urban_database
+        is_sqlite = True if ".sqlite" in self.mike_urban_database else False
         fromnode_fieldname = "FROMNODE" if ".mdb" in self.mike_urban_database else "fromnodeid"
         tonode_fieldname = "TONODE" if ".mdb" in self.mike_urban_database else "tonodeid"
         msm_Node = os.path.join(mike_urban_database,"msm_Node")
@@ -51,22 +52,24 @@ class NetworkLinks:
         if map_only == "" or "link" in map_only:
             self.links = {}
 #            getFromNodeRe = re.compile(r"(.+)l\d+")
-            fields = ["MUID", "SHAPE@", 'Length', fromnode_fieldname, tonode_fieldname] if fromnode_fieldname in [f.name for f in arcpy.ListFields(msm_Link)] else ["MUID", "SHAPE@", 'Length']
+            fields = ["MUID", "SHAPE@", 'Length', "SLOPE" if is_sqlite else "SLOPE_C", "Diameter", fromnode_fieldname, tonode_fieldname] if fromnode_fieldname in [f.name for f in arcpy.ListFields(msm_Link)] else ["MUID", "SHAPE@", 'Length', "SLOPE" if is_sqlite else "SLOPE_C", "Diameter"]
             with arcpy.da.SearchCursor(msm_Link, fields) as cursor:
                 for row in cursor:
                     self.links[row[0]] = self.Link(row[0])
-                    if (fromnode_fieldname in fields and row[3] and row[4] and
-                            row[3] in points_muid and row[4] in points_muid and
-                            validateNode(row[1].firstPoint, points_xy[points_muid.index(row[3]),:]) and
-                            validateNode(row[1].lastPoint, points_xy[points_muid.index(row[4]),:])):
-                        self.links[row[0]].fromnode = row[3]
-                        self.links[row[0]].tonode = row[4]
+                    if (fromnode_fieldname in fields and row[5] and row[6] and
+                            row[4] in points_muid and row[6] in points_muid and
+                            validateNode(row[1].firstPoint, points_xy[points_muid.index(row[5]),:]) and
+                            validateNode(row[1].lastPoint, points_xy[points_muid.index(row[6]),:])):
+                        self.links[row[0]].fromnode = row[5]
+                        self.links[row[0]].tonode = row[6]
                         self.links[row[0]].node_field_correct = True
                     else:
                         self.links[row[0]].fromnode = findClosestNode(row[1].firstPoint)
                         self.links[row[0]].tonode = findClosestNode(row[1].lastPoint)
 
                     self.links[row[0]].length = row[2] if row[2] else row[1].length
+                    self.links[row[0]].slope = row[3]
+                    self.links[row[0]].diameter = row[4]
 
         if map_only == "" or "weir" in map_only:
             self.weirs = {}
@@ -108,3 +111,17 @@ class NetworkLinks:
         tonode = None
         length = None
         node_field_correct = False
+        slope = None
+
+        @property
+        def v_full(self):
+            import ColebrookWhite
+            try:
+                v = ColebrookWhite.QFull(self.diameter, self.slope / 1e2, "PL") / ((self.diameter / 2) ** 2 * 3.1415)
+            except Exception as e:
+                v = 1
+            return v
+
+        @property
+        def travel_time(self):
+            return self.length / self.v_full
