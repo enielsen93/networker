@@ -24,7 +24,7 @@ class NetworkLinks:
         msm_Pump = os.path.join(mike_urban_database,"msm_Pump")
         map_only = map_only.lower()
 
-        filter_sql_query = "" if len(filter_sql_query)>2900 else filter_sql_query
+        filter_sql_query = "" if not filter_sql_query or len(filter_sql_query)>2900 else filter_sql_query
 
         self.nodes = {}
 #        print(arcpy.management.GetCount(msm_Node))
@@ -35,6 +35,7 @@ class NetworkLinks:
                 self.nodes[row[0]] = self.Node(row[0], row[1])
                 points_xy[i,:] = [row[1].firstPoint.X, row[1].firstPoint.Y]
                 points_muid.append(row[0])
+        points_muid_set = set(points_muid)
 
         def validateNode(point, reference, search_radius = 0.1):
             distance = np.sqrt(np.sum(np.abs(reference-[point.X, point.Y])**2))
@@ -59,7 +60,7 @@ class NetworkLinks:
                 for row in cursor:
                     self.links[row[0]] = self.Link(row[0])
                     if (fromnode_fieldname in fields and row[5] and row[6] and
-                            row[4] in points_muid and row[6] in points_muid and
+                            row[4] in points_muid_set and row[6] in points_muid_set and
                             validateNode(row[1].firstPoint, points_xy[points_muid.index(row[5]),:]) and
                             validateNode(row[1].lastPoint, points_xy[points_muid.index(row[6]),:])):
                         self.links[row[0]].fromnode = row[5]
@@ -109,7 +110,7 @@ class NetworkLinks:
         def __init__(self, MUID):
             self.MUID = MUID
 
-        fromnode = None
+        fromnode = 1
         tonode = None
         length = None
         node_field_correct = False
@@ -129,4 +130,7 @@ class NetworkLinks:
             return self.length / self.v_full
 
 if __name__ == "__main__":
-    NetworkLinks(r"C:\Users\ELNN\OneDrive - Ramboll\Documents\Aarhus Vand\Kongelund og Marselistunnel\MIKE\KOM_013\KOM_013.mdb")
+    # import timeit
+    # print(timeit.timeit(lambda: NetworkLinks(r"C:\Users\ELNN\OneDrive - Ramboll\Documents\Aarhus Vand\Kongelund og Marselistunnel\MIKE\KOM_013\KOM_013.mdb"), number = 5)/5)
+    NetworkLinks(
+        r"C:\Users\ELNN\OneDrive - Ramboll\Documents\Aarhus Vand\Kongelund og Marselistunnel\MIKE\KOM_013\KOM_013.mdb")
