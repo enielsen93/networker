@@ -12,7 +12,7 @@ import re
 
 
 class NetworkLinks:
-    def __init__(self, mike_urban_database, map_only = ""):
+    def __init__(self, mike_urban_database, map_only = "", filter_sql_query = None):
         self.mike_urban_database = mike_urban_database
         is_sqlite = True if ".sqlite" in self.mike_urban_database else False
         fromnode_fieldname = "FROMNODE" if ".mdb" in self.mike_urban_database else "fromnodeid"
@@ -53,7 +53,7 @@ class NetworkLinks:
             self.links = {}
 #            getFromNodeRe = re.compile(r"(.+)l\d+")
             fields = ["MUID", "SHAPE@", 'Length', "SLOPE" if is_sqlite else "SLOPE_C", "Diameter", fromnode_fieldname, tonode_fieldname] if fromnode_fieldname in [f.name for f in arcpy.ListFields(msm_Link)] else ["MUID", "SHAPE@", 'Length', "SLOPE" if is_sqlite else "SLOPE_C", "Diameter"]
-            with arcpy.da.SearchCursor(msm_Link, fields) as cursor:
+            with arcpy.da.SearchCursor(msm_Link, fields, where_clause = filter_sql_query) as cursor:
                 for row in cursor:
                     self.links[row[0]] = self.Link(row[0])
                     if (fromnode_fieldname in fields and row[5] and row[6] and
@@ -73,7 +73,7 @@ class NetworkLinks:
 
         if map_only == "" or "weir" in map_only:
             self.weirs = {}
-            with arcpy.da.SearchCursor(msm_Weir, ["MUID", "SHAPE@"]) as cursor:
+            with arcpy.da.SearchCursor(msm_Weir, ["MUID", "SHAPE@"], where_clause = filter_sql_query) as cursor:
                 for row in cursor:
                     self.links[row[0]] = self.Link(row[0])
                     self.links[row[0]].fromnode = findClosestNode(row[1].firstPoint)
@@ -82,7 +82,7 @@ class NetworkLinks:
 
         if map_only == "" or "pump" in map_only:
             self.pumps = {}
-            with arcpy.da.SearchCursor(msm_Pump, ["MUID", "SHAPE@"]) as cursor:
+            with arcpy.da.SearchCursor(msm_Pump, ["MUID", "SHAPE@"], where_clause = filter_sql_query) as cursor:
                 for row in cursor:
                     self.links[row[0]] = self.Link(row[0])
                     self.links[row[0]].fromnode = findClosestNode(row[1].firstPoint)
@@ -91,7 +91,7 @@ class NetworkLinks:
 
         if map_only == "" or "orifice" in map_only:
             self.orifices = {}
-            with arcpy.da.SearchCursor(msm_Orifice, ["MUID", "SHAPE@"]) as cursor:
+            with arcpy.da.SearchCursor(msm_Orifice, ["MUID", "SHAPE@"], where_clause = filter_sql_query) as cursor:
                 for row in cursor:
                     self.links[row[0]] = self.Link(row[0])
                     self.links[row[0]].fromnode = findClosestNode(row[1].firstPoint)
@@ -125,3 +125,6 @@ class NetworkLinks:
         @property
         def travel_time(self):
             return self.length / self.v_full
+
+if __name__ == "__main__":
+    NetworkLinks(r"C:\Users\ELNN\OneDrive - Ramboll\Documents\Aarhus Vand\Kongelund og Marselistunnel\MIKE\KOM_013\KOM_013.mdb")
