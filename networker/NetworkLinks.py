@@ -78,28 +78,28 @@ class NetworkLinks:
             self.weirs = {}
             with arcpy.da.SearchCursor(msm_Weir, ["MUID", "SHAPE@"], where_clause = filter_sql_query) as cursor:
                 for row in cursor:
-                    self.links[row[0]] = self.Link(row[0])
-                    self.links[row[0]].fromnode = findClosestNode(row[1].firstPoint)
-                    self.links[row[0]].tonode = findClosestNode(row[1].lastPoint)
-                    self.links[row[0]].length = row[1].length
+                    self.weirs[row[0]] = self.Link(row[0])
+                    self.weirs[row[0]].fromnode = findClosestNode(row[1].firstPoint)
+                    self.weirs[row[0]].tonode = findClosestNode(row[1].lastPoint)
+                    self.weirs[row[0]].length = row[1].length
 
         if map_only == "" or "pump" in map_only:
             self.pumps = {}
             with arcpy.da.SearchCursor(msm_Pump, ["MUID", "SHAPE@"], where_clause = filter_sql_query) as cursor:
                 for row in cursor:
-                    self.links[row[0]] = self.Link(row[0])
-                    self.links[row[0]].fromnode = findClosestNode(row[1].firstPoint)
-                    self.links[row[0]].tonode = findClosestNode(row[1].lastPoint)
-                    self.links[row[0]].length = row[1].length
+                    self.pumps[row[0]] = self.Link(row[0])
+                    self.pumps[row[0]].fromnode = findClosestNode(row[1].firstPoint)
+                    self.pumps[row[0]].tonode = findClosestNode(row[1].lastPoint)
+                    self.pumps[row[0]].length = row[1].length
 
         if map_only == "" or "orifice" in map_only:
             self.orifices = {}
             with arcpy.da.SearchCursor(msm_Orifice, ["MUID", "SHAPE@"], where_clause = filter_sql_query) as cursor:
                 for row in cursor:
-                    self.links[row[0]] = self.Link(row[0])
-                    self.links[row[0]].fromnode = findClosestNode(row[1].firstPoint)
-                    self.links[row[0]].tonode = findClosestNode(row[1].lastPoint)
-                    self.links[row[0]].length = row[1].length
+                    self.orifices[row[0]] = self.Link(row[0])
+                    self.orifices[row[0]].fromnode = findClosestNode(row[1].firstPoint)
+                    self.orifices[row[0]].tonode = findClosestNode(row[1].lastPoint)
+                    self.orifices[row[0]].length = row[1].length
 
     class Node:
         def __init__(self, MUID, shape):
@@ -133,4 +133,4 @@ if __name__ == "__main__":
     # import timeit
     # print(timeit.timeit(lambda: NetworkLinks(r"C:\Users\ELNN\OneDrive - Ramboll\Documents\Aarhus Vand\Kongelund og Marselistunnel\MIKE\KOM_013\KOM_013.mdb"), number = 5)/5)
     NetworkLinks(
-        r"C:\Users\ELNN\OneDrive - Ramboll\Documents\Aarhus Vand\Kongelund og Marselistunnel\MIKE\KOM_013\KOM_013.mdb")
+        r"C:\Users\ELNN\OneDrive - Ramboll\Documents\Aarhus Vand\Model\ABY\ABY_018.sqlite")
