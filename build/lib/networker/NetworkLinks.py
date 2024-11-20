@@ -41,10 +41,10 @@ class NetworkLinks:
         points_xy = np.zeros((int(np.sum([1 for row in arcpy.da.SearchCursor(msm_Node, ["SHAPE@"]) if row[0] is not None])),2))
         points_muid = []
         i = 0
-        with arcpy.da.SearchCursor(msm_Node, ["MUID", "SHAPE@"]) as cursor:
+        with arcpy.da.SearchCursor(msm_Node, ["MUID", "SHAPE@", "InvertLevel"]) as cursor:
             for row in cursor:
                 if row[1] is not None:
-                    self.nodes[row[0]] = self.Node(row[0], row[1])
+                    self.nodes[row[0]] = self.Node(row[0], row[1], row[2] if row[2] else 0)
                     points_xy[i,:] = [row[1].firstPoint.X, row[1].firstPoint.Y]
                     points_muid.append(row[0])
                     i += 1
@@ -68,25 +68,28 @@ class NetworkLinks:
         if map_only == "" or "link" in map_only:
             self.links = {}
 #            getFromNodeRe = re.compile(r"(.+)l\d+")
-            fields = ["MUID", "SHAPE@", 'Length', "SLOPE" if is_sqlite else "SLOPE_C", "Diameter", fromnode_fieldname, tonode_fieldname] if fromnode_fieldname in [f.name for f in arcpy.ListFields(msm_Link)] else ["MUID", "SHAPE@", 'Length', "SLOPE" if is_sqlite else "SLOPE_C", "Diameter"]
+            fields = ["MUID", "SHAPE@", 'Length', "SLOPE" if is_sqlite else "SLOPE_C", "Diameter", "uplevel", "dwlevel", fromnode_fieldname, tonode_fieldname] if fromnode_fieldname in [f.name for f in arcpy.ListFields(msm_Link)] else ["MUID", "SHAPE@", 'Length', "SLOPE" if is_sqlite else "SLOPE_C", "Diameter", "uplevel", "dwlevel"]
             with arcpy.da.SearchCursor(msm_Link, fields, where_clause = filter_sql_query) as cursor:
                 for row in cursor:
                     if row[1] is not None:
                         self.links[row[0]] = self.Link(row[0])
                         if (fromnode_fieldname in fields and row[5] and row[6] and
                                 row[4] in points_muid_set and row[6] in points_muid_set and
-                                validateNode(row[1].firstPoint, points_xy[points_muid.index(row[5]),:]) and
-                                validateNode(row[1].lastPoint, points_xy[points_muid.index(row[6]),:])):
-                            self.links[row[0]].fromnode = row[5]
-                            self.links[row[0]].tonode = row[6]
+                                validateNode(row[1].firstPoint, points_xy[points_muid.index(row[7]),:]) and
+                                validateNode(row[1].lastPoint, points_xy[points_muid.index(row[8]),:])):
+                            self.links[row[0]].fromnode = row[7]
+                            self.links[row[0]].tonode = row[8]
                             self.links[row[0]].node_field_correct = True
                         else:
                             self.links[row[0]].fromnode = findClosestNode(row[1].firstPoint)
                             self.links[row[0]].tonode = findClosestNode(row[1].lastPoint)
 
+                        self.links[row[0]].shape = row[1]
                         self.links[row[0]].length = row[2] if row[2] else row[1].length
                         self.links[row[0]].slope = row[3]
                         self.links[row[0]].diameter = row[4]
+                        self.links[row[0]].uplevel = row[5] if row[5] else self.nodes[self.links[row[0]].fromnode].invert_level
+                        self.links[row[0]].dwlevel = row[6] if row[6] else self.nodes[self.links[row[0]].tonode].invert_level
 
         if map_only == "" or "weir" in map_only:
             self.weirs = {}
@@ -116,19 +119,24 @@ class NetworkLinks:
                     self.orifices[row[0]].length = row[1].length
 
     class Node:
-        def __init__(self, MUID, shape):
+        def __init__(self, MUID, shape, invertlevel):
             self.MUID = MUID
             self.shape = shape
+            self.invert_level = invertlevel
 
     class Link:
         def __init__(self, MUID):
             self.MUID = MUID
+            self._shape_3d = None
 
-        fromnode = 1
-        tonode = None
-        length = None
-        node_field_correct = False
-        slope = None
+            self.fromnode = 1
+            self.tonode = None
+            self.length = None
+            self.node_field_correct = False
+            self.slope = None
+            self.shape = None
+            self.uplevel = None
+            self.dwlevel = None
 
         @property
         def v_full(self):
@@ -143,8 +151,44 @@ class NetworkLinks:
         def travel_time(self):
             return self.length / self.v_full
 
+        def shape_3d(self, uplevel = None, dwlevel = None):
+            if not uplevel:
+                uplevel = self.uplevel
+            if not dwlevel:
+                dwlevel = self.dwlevel
+
+            if self._shape_3d is None or (uplevel != self.uplevel and dwlevel != self.dwlevel):
+                self._shape_3d = self._generate_shape_3d(uplevel, dwlevel)
+
+            return self._shape_3d
+
+        def _generate_shape_3d(self, uplevel, dwlevel):
+            slope = (uplevel - dwlevel) / self.length
+
+            linelist = []
+            for part in self.shape:
+                parts = []
+                for part_i, point in enumerate(part):
+                    if part_i == 0:
+                        z = uplevel
+                    elif part_i == len(part) - 1:
+                        z = dwlevel
+                    else:
+                        total_distance = 0
+                        point_geometries = [arcpy.PointGeometry(p) for p in part]
+                        for i in range(1, part_i + 1):
+                            total_distance += point_geometries[i - 1].distanceTo(point_geometries[i])
+                        z = uplevel - total_distance * slope
+
+                    parts.append(arcpy.Point(point.X, point.Y, z))
+                linelist.append(parts)
+
+            return arcpy.Polyline(arcpy.Array(linelist), None, True)
+
 if __name__ == "__main__":
     # import timeit
     # print(timeit.timeit(lambda: NetworkLinks(r"C:\Users\ELNN\OneDrive - Ramboll\Documents\Aarhus Vand\Kongelund og Marselistunnel\MIKE\KOM_013\KOM_013.mdb"), number = 5)/5)
-    network = NetworkLinks(nodes_and_links = [r"C:\Users\ELNN\OneDrive - Ramboll\Documents\ArcGIS\scratch.gdb\msm_Node93", r"C:\Users\ELNN\OneDrive - Ramboll\Documents\ArcGIS\scratch.gdb\MOUSE_Links81"])
+    # network = NetworkLinks(nodes_and_links = [r"C:\Users\ELNN\OneDrive - Ramboll\Documents\ArcGIS\scratch.gdb\msm_Node93", r"C:\Users\ELNN\OneDrive - Ramboll\Documents\ArcGIS\scratch.gdb\MOUSE_Links81"])
+    network = NetworkLinks(mike_urban_database = r"C:\Users\elnn\OneDrive - Ramboll\Documents\Aarhus Vand\Marienlyst Disponeringsplan\MIKE_URBAN\MAR_030\MAR_030_rep.mdb")
+    print(network.links["Link_l438"].shape_3d(10,9))
     print("PAUSE")
