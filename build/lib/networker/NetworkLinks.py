@@ -6,6 +6,8 @@ Created on Thu Jan 14 11:17:05 2021
 """
 
 import os
+import sys
+# sys.path.append(r"C:\Users\elnn\AppData\Local\ESRI\conda\envs\myenv\Lib\site-packages")
 import arcpy.da
 import numpy as np
 import re
@@ -18,15 +20,15 @@ class NetworkLinks:
             is_sqlite = True if ".sqlite" in self.mike_urban_database else False
             fromnode_fieldname = "FROMNODE" if ".mdb" in self.mike_urban_database else "fromnodeid"
             tonode_fieldname = "TONODE" if ".mdb" in self.mike_urban_database else "tonodeid"
-            msm_Node = os.path.join(mike_urban_database,"msm_Node")
-            msm_Link = os.path.join(mike_urban_database,"msm_Link")
+            self.msm_Node = os.path.join(mike_urban_database,"msm_Node")
+            self.msm_Link = os.path.join(mike_urban_database,"msm_Link")
             msm_Weir = os.path.join(mike_urban_database,"msm_Weir")
             msm_Orifice = os.path.join(mike_urban_database,"msm_Orifice")
             msm_Pump = os.path.join(mike_urban_database,"msm_Pump")
             map_only = map_only.lower()
         elif len(nodes_and_links)==2:
-            msm_Node = nodes_and_links[0]
-            msm_Link = nodes_and_links[1]
+            self.msm_Node = nodes_and_links[0]
+            self.msm_Link = nodes_and_links[1]
             fromnode_fieldname = "FROMNODE"
             tonode_fieldname = "TONODE"
             map_only = "links"
@@ -38,17 +40,17 @@ class NetworkLinks:
 
         self.nodes = {}
 #        print(arcpy.management.GetCount(msm_Node))
-        points_xy = np.zeros((int(np.sum([1 for row in arcpy.da.SearchCursor(msm_Node, ["SHAPE@"]) if row[0] is not None])),2))
-        points_muid = []
+        self.points_xy = np.zeros((int(np.sum([1 for row in arcpy.da.SearchCursor(self.msm_Node, ["SHAPE@"]) if row[0] is not None])),2))
+        self.points_muid = []
         i = 0
-        with arcpy.da.SearchCursor(msm_Node, ["MUID", "SHAPE@", "InvertLevel"]) as cursor:
+        with arcpy.da.SearchCursor(self.msm_Node, ["MUID", "SHAPE@", "InvertLevel"]) as cursor:
             for row in cursor:
                 if row[1] is not None:
                     self.nodes[row[0]] = self.Node(row[0], row[1], row[2] if row[2] else 0)
-                    points_xy[i,:] = [row[1].firstPoint.X, row[1].firstPoint.Y]
-                    points_muid.append(row[0])
+                    self.points_xy[i,:] = [row[1].firstPoint.X, row[1].firstPoint.Y]
+                    self.points_muid.append(row[0])
                     i += 1
-        points_muid_set = set(points_muid)
+        points_muid_set = set(self.points_muid)
 
         def validateNode(point, reference, search_radius = 0.1):
             distance = np.sqrt(np.sum(np.abs(reference-[point.X, point.Y])**2))
@@ -57,47 +59,44 @@ class NetworkLinks:
             else:
                 return False
 
-        def findClosestNode(point, search_radius = 0.1):
-            muid = None
-            distances = np.sum(np.abs(points_xy-[point.X, point.Y]),axis=1)
-            if np.min(distances) < search_radius:
-                index_closest = np.argmin(distances)
-                muid = points_muid[index_closest]
-            return muid
-
         if map_only == "" or "link" in map_only:
             self.links = {}
 #            getFromNodeRe = re.compile(r"(.+)l\d+")
-            fields = ["MUID", "SHAPE@", 'Length', "SLOPE" if is_sqlite else "SLOPE_C", "Diameter", "uplevel", "dwlevel", fromnode_fieldname, tonode_fieldname] if fromnode_fieldname in [f.name for f in arcpy.ListFields(msm_Link)] else ["MUID", "SHAPE@", 'Length', "SLOPE" if is_sqlite else "SLOPE_C", "Diameter", "uplevel", "dwlevel"]
-            with arcpy.da.SearchCursor(msm_Link, fields, where_clause = filter_sql_query) as cursor:
+            fields = ["MUID", "SHAPE@", 'Length', "SLOPE" if is_sqlite else "SLOPE_C", "Diameter", "uplevel", "dwlevel", fromnode_fieldname, tonode_fieldname] if fromnode_fieldname in [f.name for f in arcpy.ListFields(self.msm_Link)] else ["MUID", "SHAPE@", 'Length', "SLOPE" if is_sqlite else "SLOPE_C", "Diameter", "uplevel", "dwlevel"]
+            with arcpy.da.SearchCursor(self.msm_Link, fields, where_clause = filter_sql_query) as cursor:
                 for row in cursor:
                     if row[1] is not None:
                         self.links[row[0]] = self.Link(row[0])
                         if (fromnode_fieldname in fields and row[5] and row[6] and
                                 row[4] in points_muid_set and row[6] in points_muid_set and
-                                validateNode(row[1].firstPoint, points_xy[points_muid.index(row[7]),:]) and
-                                validateNode(row[1].lastPoint, points_xy[points_muid.index(row[8]),:])):
+                                validateNode(row[1].firstPoint, self.points_xy[self.points_muid.index(row[7]),:]) and
+                                validateNode(row[1].lastPoint, self.points_xy[self.points_muid.index(row[8]),:])):
                             self.links[row[0]].fromnode = row[7]
                             self.links[row[0]].tonode = row[8]
                             self.links[row[0]].node_field_correct = True
                         else:
-                            self.links[row[0]].fromnode = findClosestNode(row[1].firstPoint)
-                            self.links[row[0]].tonode = findClosestNode(row[1].lastPoint)
+                            self.links[row[0]].fromnode = self.findClosestNode(row[1].firstPoint)
+                            self.links[row[0]].tonode = self.findClosestNode(row[1].lastPoint)
 
                         self.links[row[0]].shape = row[1]
                         self.links[row[0]].length = row[2] if row[2] else row[1].length
                         self.links[row[0]].slope = row[3]
                         self.links[row[0]].diameter = row[4]
-                        self.links[row[0]].uplevel = row[5] if row[5] else self.nodes[self.links[row[0]].fromnode].invert_level
-                        self.links[row[0]].dwlevel = row[6] if row[6] else self.nodes[self.links[row[0]].tonode].invert_level
+
+                        try:
+                            self.links[row[0]].uplevel = row[5] if row[5] else self.nodes[self.links[row[0]].fromnode].invert_level
+                            self.links[row[0]].dwlevel = row[6] if row[6] else self.nodes[self.links[row[0]].tonode].invert_level
+                        except Exception as e:
+                            print("Link %s does not have FromNode or ToNode (%s-%s)" % (row[0], self.links[row[0]].fromnode, self.links[row[0]].fromnode))
+                            # raise(Exception("Link %s does not have FromNode or ToNode (%s-%s)" % (row[0], self.links[row[0]].fromnode, self.links[row[0]].fromnode)))
 
         if map_only == "" or "weir" in map_only:
             self.weirs = {}
             with arcpy.da.SearchCursor(msm_Weir, ["MUID", "SHAPE@"], where_clause = filter_sql_query) as cursor:
                 for row in cursor:
                     self.weirs[row[0]] = self.Link(row[0])
-                    self.weirs[row[0]].fromnode = findClosestNode(row[1].firstPoint)
-                    self.weirs[row[0]].tonode = findClosestNode(row[1].lastPoint)
+                    self.weirs[row[0]].fromnode = self.findClosestNode(row[1].firstPoint)
+                    self.weirs[row[0]].tonode = self.findClosestNode(row[1].lastPoint)
                     self.weirs[row[0]].length = row[1].length
 
         if map_only == "" or "pump" in map_only:
@@ -105,8 +104,8 @@ class NetworkLinks:
             with arcpy.da.SearchCursor(msm_Pump, ["MUID", "SHAPE@"], where_clause = filter_sql_query) as cursor:
                 for row in cursor:
                     self.pumps[row[0]] = self.Link(row[0])
-                    self.pumps[row[0]].fromnode = findClosestNode(row[1].firstPoint)
-                    self.pumps[row[0]].tonode = findClosestNode(row[1].lastPoint)
+                    self.pumps[row[0]].fromnode = self.findClosestNode(row[1].firstPoint)
+                    self.pumps[row[0]].tonode = self.findClosestNode(row[1].lastPoint)
                     self.pumps[row[0]].length = row[1].length
 
         if map_only == "" or "orifice" in map_only:
@@ -114,8 +113,8 @@ class NetworkLinks:
             with arcpy.da.SearchCursor(msm_Orifice, ["MUID", "SHAPE@"], where_clause = filter_sql_query) as cursor:
                 for row in cursor:
                     self.orifices[row[0]] = self.Link(row[0])
-                    self.orifices[row[0]].fromnode = findClosestNode(row[1].firstPoint)
-                    self.orifices[row[0]].tonode = findClosestNode(row[1].lastPoint)
+                    self.orifices[row[0]].fromnode = self.findClosestNode(row[1].firstPoint)
+                    self.orifices[row[0]].tonode = self.findClosestNode(row[1].lastPoint)
                     self.orifices[row[0]].length = row[1].length
 
     class Node:
@@ -185,10 +184,131 @@ class NetworkLinks:
 
             return arcpy.Polyline(arcpy.Array(linelist), None, True)
 
+    def findClosestNode(self, point, search_radius=0.1):
+        muid = None
+        distances = np.sum(np.abs(self.points_xy - [point.X, point.Y]), axis=1)
+        if np.min(distances) < search_radius:
+            index_closest = np.argmin(distances)
+            muid = self.points_muid[index_closest]
+        return muid
+
+    def fixConnections(self, search_radius = 1):
+        links_missing_fromnode = [link.MUID for link in self.links.values() if not link.fromnode]
+        links_missing_tonode = [link.MUID for link in self.links.values() if not link.tonode]
+        if "fromnodeid" in [field.name.lower() for field in arcpy.ListFields(self.msm_Link)]:
+            links_missing_fromnode += [row[0] for row in arcpy.da.SearchCursor(self.msm_Link, ["MUID"], where_clause = "fromnodeid IS NULL")]
+            links_missing_tonode += [row[0] for row in
+                                     arcpy.da.SearchCursor(self.msm_Link, ["MUID"], where_clause="tonodeid IS NULL")]
+        elif "fromnode" in [field.name.lower() for field in arcpy.ListFields(self.msm_Link)]:
+            links_missing_fromnode += [row[0] for row in arcpy.da.SearchCursor(self.msm_Link, ["MUID"], where_clause = "fromnode = ''")]
+            links_missing_tonode += [row[0] for row in
+                                     arcpy.da.SearchCursor(self.msm_Link, ["MUID"], where_clause="tonode = ''")]
+
+
+        print("Missing FromNode:")
+        print(links_missing_fromnode)
+        print(links_missing_tonode)
+
+        class Point:
+            def __init__(self, x, y):
+                self.X = x
+                self.Y = y
+
+        if "sqlite" in arcpy.Describe(self.msm_Link).catalogPath:
+            import sqlite3
+            from shapely.geometry import LineString
+            from shapely.wkt import loads, dumps
+            conn_db1 = sqlite3.connect(os.path.dirname(arcpy.Describe(self.msm_Link).catalogPath))
+            conn_db1.enable_load_extension(True)
+            conn_db1.execute('SELECT load_extension("mod_spatialite")')
+            # conn_db1.execute("SELECT sqlite_compileoption_used('ENABLE_RTREE')")
+            # import rtree
+            # conn_db1.load_extension('SQLITE_ENABLE_RTREE.dll')
+
+            cursor = conn_db1.cursor()
+
+            for link in links_missing_fromnode:
+                cursor.execute("SELECT AsText(geometry) FROM msm_Link WHERE muid = '%s'" % (link))
+                row = cursor.fetchone()
+                line = loads(row[0])
+
+                coords = list(line.coords)
+                # coords[0] = self.findClosestNode(Point(coords[0][0],coords[0][1]), search_radius = search_radius)
+                fromnode = self.findClosestNode(Point(coords[0][0],coords[0][1]), search_radius=search_radius)
+
+                coords[0] = tuple(self.points_xy[
+                    self.points_muid.index(fromnode)])
+
+                updated_line = LineString(coords)
+                updated_wkt = dumps(updated_line)
+
+                # cursor.execute(f"SELECT GeomFromText(?, 4326)", (updated_wkt,))
+                # print(row)
+                # print("GeomFromText('%s')" % (updated_wkt))
+                # cursor.execute("SELECT GeomFromText('%s')" % (updated_wkt))
+                print("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
+                cursor.execute("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
+                if "fromnodeid" in [field.name for field in arcpy.ListFields(self.msm_Link)]:
+                    cursor.execute(
+                        "UPDATE msm_Link SET fromnodeid = '%s' WHERE muid = '%s'" % (fromnode, link))
+
+            for link in links_missing_tonode:
+                cursor.execute("SELECT AsText(geometry) FROM msm_Link WHERE muid = '%s'" % (link))
+                row = cursor.fetchone()
+                line = loads(row[0])
+
+                coords = list(line.coords)
+                # coords[0] = self.findClosestNode(Point(coords[0][0],coords[0][1]), search_radius = search_radius)
+                tonode = self.findClosestNode(Point(coords[-1][0],coords[-1][1]), search_radius=search_radius)
+                coords[-1] = tuple(self.points_xy[
+                    self.points_muid.index(tonode)])
+                updated_line = LineString(coords)
+                updated_wkt = dumps(updated_line)
+
+                # cursor.execute(f"SELECT GeomFromText(?, 4326)", (updated_wkt,))
+                # print(row)
+                # print("GeomFromText('%s')" % (updated_wkt))
+                # cursor.execute("SELECT GeomFromText('%s')" % (updated_wkt))
+                print("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
+                cursor.execute("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
+                if "fromnodeid" in [field.name for field in arcpy.ListFields(self.msm_Link)]:
+                    cursor.execute(
+                        "UPDATE msm_Link SET tonodeid = '%s' WHERE muid = '%s'" % (tonode, link))
+            conn_db1.commit()
+            del cursor
+        else:
+            edit = arcpy.da.Editor(self.mike_urban_database)
+            edit.startEditing(False, True)
+            edit.startOperation()
+            if links_missing_fromnode:
+                with arcpy.da.UpdateCursor(self.msm_Link, ["MUID", "SHAPE@"], where_clause = "MUID IN ('%s')" % "', '".join(links_missing_fromnode)) as cursor:
+                    for row in cursor:
+                        points = [arcpy.Point(p.X, p.Y) for p in row[1].getPart(0)]
+                        points[0] = arcpy.Point(*self.points_xy[
+                            self.points_muid.index((self.findClosestNode(row[1].firstPoint, search_radius=search_radius)))])
+                        row[1] = arcpy.Polyline(arcpy.Array(points))
+                        cursor.updateRow(row)
+            if links_missing_tonode:
+                with arcpy.da.UpdateCursor(self.msm_Link, ["MUID", "SHAPE@"], where_clause = "MUID IN ('%s')" % "', '".join(links_missing_tonode)) as cursor:
+                    for row in cursor:
+                        points = [arcpy.Point(p.X, p.Y) for p in row[1].getPart(0)]
+                        points[-1] = arcpy.Point(*self.points_xy[
+                            self.points_muid.index((self.findClosestNode(row[1].lastPoint, search_radius=search_radius)))])
+                        row[1] = arcpy.Polyline(arcpy.Array(points))
+                        cursor.updateRow(row)
+            edit.stopOperation()
+            edit.stopEditing(True)
+
+        # print("BOB")
+
+
 if __name__ == "__main__":
     # import timeit
     # print(timeit.timeit(lambda: NetworkLinks(r"C:\Users\ELNN\OneDrive - Ramboll\Documents\Aarhus Vand\Kongelund og Marselistunnel\MIKE\KOM_013\KOM_013.mdb"), number = 5)/5)
     # network = NetworkLinks(nodes_and_links = [r"C:\Users\ELNN\OneDrive - Ramboll\Documents\ArcGIS\scratch.gdb\msm_Node93", r"C:\Users\ELNN\OneDrive - Ramboll\Documents\ArcGIS\scratch.gdb\MOUSE_Links81"])
-    network = NetworkLinks(mike_urban_database = r"C:\Users\elnn\OneDrive - Ramboll\Documents\Aarhus Vand\Marienlyst Disponeringsplan\MIKE_URBAN\MAR_030\MAR_030_rep.mdb")
-    print(network.links["Link_l438"].shape_3d(10,9))
-    print("PAUSE")
+    network = NetworkLinks(mike_urban_database = r"C:\Users\elnn\OneDrive - Ramboll\Documents\Aarhus Vand\Kongelund og Marselistunnel\MIKE\KOM_Plan_110\KOM_Plan_110.mdb")
+    # print([link.fromnode for link in network.links.values()])
+    network.fixConnections(search_radius = 5)
+        # print(network.links["Link_l438"].shape_3d(10,9))
+    # print(network.links["Link_l438"].shape_3d(10, 9))
+    # print("PAUSE")
