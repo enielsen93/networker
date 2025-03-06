@@ -236,21 +236,25 @@ class NetworkLinks:
                 # coords[0] = self.findClosestNode(Point(coords[0][0],coords[0][1]), search_radius = search_radius)
                 fromnode = self.findClosestNode(Point(coords[0][0],coords[0][1]), search_radius=search_radius)
 
-                coords[0] = tuple(self.points_xy[
-                    self.points_muid.index(fromnode)])
+                if not fromnode:
+                    import warnings
+                    warnings.warn("Could not find FromNode for Link %s with search radius of %d m" % (link, search_radius))
+                else:
+                    coords[0] = tuple(self.points_xy[
+                        self.points_muid.index(fromnode)])
 
-                updated_line = LineString(coords)
-                updated_wkt = dumps(updated_line)
+                    updated_line = LineString(coords)
+                    updated_wkt = dumps(updated_line)
 
-                # cursor.execute(f"SELECT GeomFromText(?, 4326)", (updated_wkt,))
-                # print(row)
-                # print("GeomFromText('%s')" % (updated_wkt))
-                # cursor.execute("SELECT GeomFromText('%s')" % (updated_wkt))
-                print("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
-                cursor.execute("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
-                if "fromnodeid" in [field.name for field in arcpy.ListFields(self.msm_Link)]:
-                    cursor.execute(
-                        "UPDATE msm_Link SET fromnodeid = '%s' WHERE muid = '%s'" % (fromnode, link))
+                    # cursor.execute(f"SELECT GeomFromText(?, 4326)", (updated_wkt,))
+                    # print(row)
+                    # print("GeomFromText('%s')" % (updated_wkt))
+                    # cursor.execute("SELECT GeomFromText('%s')" % (updated_wkt))
+                    print("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
+                    cursor.execute("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
+                    if "fromnodeid" in [field.name for field in arcpy.ListFields(self.msm_Link)]:
+                        cursor.execute(
+                            "UPDATE msm_Link SET fromnodeid = '%s' WHERE muid = '%s'" % (fromnode, link))
 
             for link in links_missing_tonode:
                 cursor.execute("SELECT AsText(geometry) FROM msm_Link WHERE muid = '%s'" % (link))
@@ -260,20 +264,24 @@ class NetworkLinks:
                 coords = list(line.coords)
                 # coords[0] = self.findClosestNode(Point(coords[0][0],coords[0][1]), search_radius = search_radius)
                 tonode = self.findClosestNode(Point(coords[-1][0],coords[-1][1]), search_radius=search_radius)
-                coords[-1] = tuple(self.points_xy[
-                    self.points_muid.index(tonode)])
-                updated_line = LineString(coords)
-                updated_wkt = dumps(updated_line)
+                if not tonode:
+                    import warnings
+                    warnings.warn("Could not find ToNode for Link %s with search radius of %d m" % (link, search_radius))
+                else:
+                    coords[-1] = tuple(self.points_xy[
+                        self.points_muid.index(tonode)])
+                    updated_line = LineString(coords)
+                    updated_wkt = dumps(updated_line)
 
-                # cursor.execute(f"SELECT GeomFromText(?, 4326)", (updated_wkt,))
-                # print(row)
-                # print("GeomFromText('%s')" % (updated_wkt))
-                # cursor.execute("SELECT GeomFromText('%s')" % (updated_wkt))
-                print("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
-                cursor.execute("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
-                if "fromnodeid" in [field.name for field in arcpy.ListFields(self.msm_Link)]:
-                    cursor.execute(
-                        "UPDATE msm_Link SET tonodeid = '%s' WHERE muid = '%s'" % (tonode, link))
+                    # cursor.execute(f"SELECT GeomFromText(?, 4326)", (updated_wkt,))
+                    # print(row)
+                    # print("GeomFromText('%s')" % (updated_wkt))
+                    # cursor.execute("SELECT GeomFromText('%s')" % (updated_wkt))
+                    print("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
+                    cursor.execute("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
+                    if "fromnodeid" in [field.name for field in arcpy.ListFields(self.msm_Link)]:
+                        cursor.execute(
+                            "UPDATE msm_Link SET tonodeid = '%s' WHERE muid = '%s'" % (tonode, link))
             conn_db1.commit()
             del cursor
         else:
@@ -306,9 +314,9 @@ if __name__ == "__main__":
     # import timeit
     # print(timeit.timeit(lambda: NetworkLinks(r"C:\Users\ELNN\OneDrive - Ramboll\Documents\Aarhus Vand\Kongelund og Marselistunnel\MIKE\KOM_013\KOM_013.mdb"), number = 5)/5)
     # network = NetworkLinks(nodes_and_links = [r"C:\Users\ELNN\OneDrive - Ramboll\Documents\ArcGIS\scratch.gdb\msm_Node93", r"C:\Users\ELNN\OneDrive - Ramboll\Documents\ArcGIS\scratch.gdb\MOUSE_Links81"])
-    network = NetworkLinks(mike_urban_database = r"C:\Users\elnn\OneDrive - Ramboll\Documents\Aarhus Vand\Hasle Torv\MIKE_URBAN\HAT_060\HAT_060.sqlite")
+    network = NetworkLinks(mike_urban_database = r"C:\Users\elnn\OneDrive - Ramboll\Documents\Aarhus Vand\Vesterbro Torv\MIKE_URBAN\VBT_STATUS_011\VBT_STATUS_011.sqlite")
     # print([link.fromnode for link in network.links.values()])
-    network.fixConnections(search_radius = 1)
+    # network.fixConnections(search_radius = 2)
         # print(network.links["Link_l438"].shape_3d(10,9))
     # print(network.links["Link_l438"].shape_3d(10, 9))
     # print("PAUSE")
