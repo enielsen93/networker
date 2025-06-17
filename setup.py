@@ -9,7 +9,7 @@ from setuptools import setup
 
 setup(
     name='networker',
-    version='2.0.0',    
+    version='2.1.0',    
     description='Python Package for analyzing fromnode and tonode in a Mike Urban Database',
     url='https://github.com/enielsen93/networker',
     author='Emil Nielsen',

@@ -1,11 +1,13 @@
-Metadata-Version: 2.1
+Metadata-Version: 1.1
 Name: networker
-Version: 2.0.0
+Version: 2.1.0
 Summary: Python Package for analyzing fromnode and tonode in a Mike Urban Database
 Home-page: https://github.com/enielsen93/networker
 Author: Emil Nielsen
 Author-email: enielsen93@hotmail.com
 License: BSD 2-clause
+Description: UNKNOWN
+Platform: UNKNOWN
 Classifier: Development Status :: 1 - Planning
 Classifier: Intended Audience :: Science/Research
 Classifier: License :: OSI Approved :: BSD License

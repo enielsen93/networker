@@ -11,7 +11,7 @@ import sys
 import arcpy.da
 import numpy as np
 import re
-
+from scipy.spatial import cKDTree
 
 class NetworkLinks:
     def __init__(self, mike_urban_database = None, nodes_and_links = None, map_only = "", filter_sql_query = None):
@@ -40,37 +40,40 @@ class NetworkLinks:
 
         self.nodes = {}
 #        print(arcpy.management.GetCount(msm_Node))
-        self.points_xy = np.zeros((int(np.sum([1 for row in arcpy.da.SearchCursor(self.msm_Node, ["SHAPE@"]) if row[0] is not None])),2))
-        self.points_muid = []
+        self.points_xy = []
+
+        self.points_muid = {}
         i = 0
         with arcpy.da.SearchCursor(self.msm_Node, ["MUID", "SHAPE@", "InvertLevel"]) as cursor:
             for row in cursor:
                 if row[1] is not None:
                     self.nodes[row[0]] = self.Node(row[0], row[1], row[2] if row[2] else 0)
-                    self.points_xy[i,:] = [row[1].firstPoint.X, row[1].firstPoint.Y]
-                    self.points_muid.append(row[0])
+                    self.points_xy.append((row[1].firstPoint.X, row[1].firstPoint.Y))
+                    self.points_muid[i] = row[0]
                     i += 1
-        points_muid_set = set(self.points_muid)
+        points_muid_set = set(self.points_muid.values())
+        self._muid_to_index = {v: k for k, v in self.points_muid.items()}
+
+        self.points_xy = np.array(self.points_xy)
+        self.kdtree = cKDTree(self.points_xy)  # self.points_xy shape (N, 2)
 
         def validateNode(point, reference, search_radius = 0.1):
-            distance = np.sqrt(np.sum(np.abs(reference-[point.X, point.Y])**2))
-            if distance < search_radius:
-                return True
-            else:
-                return False
+            distance = np.sum(reference-[point.X, point.Y])**2
+            return distance < search_radius**2
 
         if map_only == "" or "link" in map_only:
             self.links = {}
 #            getFromNodeRe = re.compile(r"(.+)l\d+")
             fields = ["MUID", "SHAPE@", 'Length', "SLOPE" if is_sqlite else "SLOPE_C", "Diameter", "uplevel", "dwlevel", fromnode_fieldname, tonode_fieldname] if fromnode_fieldname in [f.name for f in arcpy.ListFields(self.msm_Link)] else ["MUID", "SHAPE@", 'Length', "SLOPE" if is_sqlite else "SLOPE_C", "Diameter", "uplevel", "dwlevel"]
             with arcpy.da.SearchCursor(self.msm_Link, fields, where_clause = filter_sql_query) as cursor:
+                fromnode_tonode_valid = True if fromnode_fieldname in fields else False
                 for row in cursor:
                     if row[1] is not None:
                         self.links[row[0]] = self.Link(row[0])
-                        if (fromnode_fieldname in fields and row[5] and row[6] and
-                                row[4] in points_muid_set and row[6] in points_muid_set and
-                                validateNode(row[1].firstPoint, self.points_xy[self.points_muid.index(row[7]),:]) and
-                                validateNode(row[1].lastPoint, self.points_xy[self.points_muid.index(row[8]),:])):
+                        if (fromnode_tonode_valid and row[7] and row[8] and
+                                row[7] in points_muid_set and row[8] in points_muid_set and
+                                validateNode(row[1].firstPoint, self.points_xy[self._muid_to_index[row[7]]]) and
+                                validateNode(row[1].lastPoint, self.points_xy[self._muid_to_index[row[8]]])):
                             self.links[row[0]].fromnode = row[7]
                             self.links[row[0]].tonode = row[8]
                             self.links[row[0]].node_field_correct = True
@@ -186,9 +189,9 @@ class NetworkLinks:
 
     def findClosestNode(self, point, search_radius=0.1):
         muid = None
-        distances = np.sum(np.abs(self.points_xy - [point.X, point.Y]), axis=1)
-        if np.min(distances) < search_radius:
-            index_closest = np.argmin(distances)
+        distance, index_closest = self.kdtree.query([point.X, point.Y], distance_upper_bound=search_radius)
+
+        if distance < search_radius:
             muid = self.points_muid[index_closest]
         return muid
 
@@ -236,21 +239,25 @@ class NetworkLinks:
                 # coords[0] = self.findClosestNode(Point(coords[0][0],coords[0][1]), search_radius = search_radius)
                 fromnode = self.findClosestNode(Point(coords[0][0],coords[0][1]), search_radius=search_radius)
 
-                coords[0] = tuple(self.points_xy[
-                    self.points_muid.index(fromnode)])
+                if not fromnode:
+                    import warnings
+                    warnings.warn("Could not find FromNode for Link %s with search radius of %d m" % (link, search_radius))
+                else:
+                    coords[0] = tuple(self.points_xy[
+                        self.points_muid.index(fromnode)])
 
-                updated_line = LineString(coords)
-                updated_wkt = dumps(updated_line)
+                    updated_line = LineString(coords)
+                    updated_wkt = dumps(updated_line)
 
-                # cursor.execute(f"SELECT GeomFromText(?, 4326)", (updated_wkt,))
-                # print(row)
-                # print("GeomFromText('%s')" % (updated_wkt))
-                # cursor.execute("SELECT GeomFromText('%s')" % (updated_wkt))
-                print("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
-                cursor.execute("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
-                if "fromnodeid" in [field.name for field in arcpy.ListFields(self.msm_Link)]:
-                    cursor.execute(
-                        "UPDATE msm_Link SET fromnodeid = '%s' WHERE muid = '%s'" % (fromnode, link))
+                    # cursor.execute(f"SELECT GeomFromText(?, 4326)", (updated_wkt,))
+                    # print(row)
+                    # print("GeomFromText('%s')" % (updated_wkt))
+                    # cursor.execute("SELECT GeomFromText('%s')" % (updated_wkt))
+                    print("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
+                    cursor.execute("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
+                    if "fromnodeid" in [field.name for field in arcpy.ListFields(self.msm_Link)]:
+                        cursor.execute(
+                            "UPDATE msm_Link SET fromnodeid = '%s' WHERE muid = '%s'" % (fromnode, link))
 
             for link in links_missing_tonode:
                 cursor.execute("SELECT AsText(geometry) FROM msm_Link WHERE muid = '%s'" % (link))
@@ -260,20 +267,24 @@ class NetworkLinks:
                 coords = list(line.coords)
                 # coords[0] = self.findClosestNode(Point(coords[0][0],coords[0][1]), search_radius = search_radius)
                 tonode = self.findClosestNode(Point(coords[-1][0],coords[-1][1]), search_radius=search_radius)
-                coords[-1] = tuple(self.points_xy[
-                    self.points_muid.index(tonode)])
-                updated_line = LineString(coords)
-                updated_wkt = dumps(updated_line)
+                if not tonode:
+                    import warnings
+                    warnings.warn("Could not find ToNode for Link %s with search radius of %d m" % (link, search_radius))
+                else:
+                    coords[-1] = tuple(self.points_xy[
+                        self.points_muid.index(tonode)])
+                    updated_line = LineString(coords)
+                    updated_wkt = dumps(updated_line)
 
-                # cursor.execute(f"SELECT GeomFromText(?, 4326)", (updated_wkt,))
-                # print(row)
-                # print("GeomFromText('%s')" % (updated_wkt))
-                # cursor.execute("SELECT GeomFromText('%s')" % (updated_wkt))
-                print("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
-                cursor.execute("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
-                if "fromnodeid" in [field.name for field in arcpy.ListFields(self.msm_Link)]:
-                    cursor.execute(
-                        "UPDATE msm_Link SET tonodeid = '%s' WHERE muid = '%s'" % (tonode, link))
+                    # cursor.execute(f"SELECT GeomFromText(?, 4326)", (updated_wkt,))
+                    # print(row)
+                    # print("GeomFromText('%s')" % (updated_wkt))
+                    # cursor.execute("SELECT GeomFromText('%s')" % (updated_wkt))
+                    print("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
+                    cursor.execute("UPDATE msm_Link SET geometry = GeomFromText('%s',-1) WHERE muid = '%s'" % (updated_wkt, link))
+                    if "fromnodeid" in [field.name for field in arcpy.ListFields(self.msm_Link)]:
+                        cursor.execute(
+                            "UPDATE msm_Link SET tonodeid = '%s' WHERE muid = '%s'" % (tonode, link))
             conn_db1.commit()
             del cursor
         else:
@@ -284,18 +295,26 @@ class NetworkLinks:
                 with arcpy.da.UpdateCursor(self.msm_Link, ["MUID", "SHAPE@"], where_clause = "MUID IN ('%s')" % "', '".join(links_missing_fromnode)) as cursor:
                     for row in cursor:
                         points = [arcpy.Point(p.X, p.Y) for p in row[1].getPart(0)]
-                        points[0] = arcpy.Point(*self.points_xy[
-                            self.points_muid.index((self.findClosestNode(row[1].firstPoint, search_radius=search_radius)))])
-                        row[1] = arcpy.Polyline(arcpy.Array(points))
-                        cursor.updateRow(row)
+                        closest_node = self.findClosestNode(row[1].firstPoint, search_radius=search_radius)
+                        if closest_node:
+                            points[0] = arcpy.Point(*self.points_xy[
+                                self.points_muid.index((closest_node))])
+                            row[1] = arcpy.Polyline(arcpy.Array(points))
+                            cursor.updateRow(row)
+                        else:
+                            print("Could not find a fromnode for link %s" % (row[0]))
             if links_missing_tonode:
                 with arcpy.da.UpdateCursor(self.msm_Link, ["MUID", "SHAPE@"], where_clause = "MUID IN ('%s')" % "', '".join(links_missing_tonode)) as cursor:
                     for row in cursor:
                         points = [arcpy.Point(p.X, p.Y) for p in row[1].getPart(0)]
-                        points[-1] = arcpy.Point(*self.points_xy[
-                            self.points_muid.index((self.findClosestNode(row[1].lastPoint, search_radius=search_radius)))])
-                        row[1] = arcpy.Polyline(arcpy.Array(points))
-                        cursor.updateRow(row)
+                        closest_node = self.findClosestNode(row[1].lastPoint, search_radius=search_radius)
+                        if closest_node:
+                            points[-1] = arcpy.Point(*self.points_xy[
+                                self.points_muid.index((closest_node))])
+                            row[1] = arcpy.Polyline(arcpy.Array(points))
+                            cursor.updateRow(row)
+                        else:
+                            print("Could not find a tonode for link %s" % (row[0]))
             edit.stopOperation()
             edit.stopEditing(True)
 
@@ -305,10 +324,13 @@ class NetworkLinks:
 if __name__ == "__main__":
     # import timeit
     # print(timeit.timeit(lambda: NetworkLinks(r"C:\Users\ELNN\OneDrive - Ramboll\Documents\Aarhus Vand\Kongelund og Marselistunnel\MIKE\KOM_013\KOM_013.mdb"), number = 5)/5)
-    # network = NetworkLinks(nodes_and_links = [r"C:\Users\ELNN\OneDrive - Ramboll\Documents\ArcGIS\scratch.gdb\msm_Node93", r"C:\Users\ELNN\OneDrive - Ramboll\Documents\ArcGIS\scratch.gdb\MOUSE_Links81"])
-    network = NetworkLinks(mike_urban_database = r"C:\Users\elnn\OneDrive - Ramboll\Documents\Aarhus Vand\Kongelund og Marselistunnel\MIKE\KOM_Plan_110\KOM_Plan_110.mdb")
-    # print([link.fromnode for link in network.links.values()])
-    network.fixConnections(search_radius = 5)
+    network = NetworkLinks(
+            mike_urban_database=r"C:\Users\elnn\OneDrive - Ramboll\Documents\Aarhus Vand\Hasle Torv\MIKE_URBAN\HAT_134\HAT_134.sqlite")
+
+
+    # print([link.fromnode for link in network.links.values() if link.MUID == "57243"])
+    # print([link.tonode for link in network.links.values() if link.MUID == "57243"])
+    # network.fixConnections(search_radius = 8)
         # print(network.links["Link_l438"].shape_3d(10,9))
     # print(network.links["Link_l438"].shape_3d(10, 9))
     # print("PAUSE")
