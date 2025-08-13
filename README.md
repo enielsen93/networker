@@ -1,3 +1,5 @@
+# ⚠️ Deprecated
+This repository is no longer maintained. Please use [MikeGraph](https://github.com/enielsen93/mikegraph) instead.
 # networker
 Python Package for getting fromnode and tonode in a MIKE URBAN Database by spatial analysis. Useful for when pipes, orifices and weirs do not have or have in incorrect fromnode and tonode values (i.e. when the Project Check Tool has not been run).
 
